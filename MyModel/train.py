@@ -14,6 +14,10 @@ from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+
+import logging
+import time
+
 class CustomDataset(Dataset):
     def __init__(self, tensor_paths, device):
         self.tensor_paths = tensor_paths
@@ -31,7 +35,7 @@ class CustomModel(nn.Module):
     def __init__(self, input1_channels, input2_size, input3_size, hidden_size, output_size):
         super(CustomModel, self).__init__()
 
-        # Input1的处理
+        # processing input 1
         self.conv1 = nn.Conv2d(input1_channels, 4, kernel_size=3, padding=1)
         self.conv2 = nn.Conv2d(4, 8, kernel_size=3, padding=1)
         self.conv3 = nn.Conv2d(8, 16, kernel_size=3, padding=1)
@@ -39,11 +43,11 @@ class CustomModel(nn.Module):
         self.fc1 = nn.Linear(16384, 128)
         self.fc2 = nn.Linear(128, hidden_size)
 
-        # Input2的处理
+        # processing input 2
         self.fc3 = nn.Linear(input2_size, hidden_size)
         self.fc4 = nn.Linear(hidden_size, hidden_size)
         
-        # Input3的处理
+        # processing input 3
         self.fc5 = nn.Linear(input3_size, hidden_size)
         self.fc6 = nn.Linear(hidden_size, hidden_size)
 
@@ -112,6 +116,14 @@ def split_dataset(train_data_ratio, eval_data_ratio, test_data_ratio, data_path_
     return train_loader, eval_loader, test_loader
 
 if __name__ == "__main__":
+    
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    log_directory = './model_train_log'  
+    os.makedirs(log_directory, exist_ok=True)  
+    log_filename = os.path.join(log_directory, f'log_{timestamp}.log')
+    
+    logging.basicConfig(filename=log_filename, level=logging.INFO, format='%(asctime)s - %(message)s')
+    
     set_random_seed(42)
     if torch.cuda.is_available():
         device_name = torch.device('cuda')
@@ -120,17 +132,19 @@ if __name__ == "__main__":
     
     data_path_list = generate_path_list()
     data_num = len(data_path_list)
-    random.shuffle(data_path_list)
+    # print(data_path_list[:100])
+    # assert 1 == 0
+    # random.shuffle(data_path_list)
 
-    train_data_ratio = 0.8
-    eval_data_ratio = 0.1
-    test_data_ratio = 0.1
+    train_data_ratio = 0.6
+    eval_data_ratio = 0.2
+    test_data_ratio = 0.2
     input1_channels = 1
     input2_size = 16
     input3_size = 3
     hidden_size = 64
     output_size = 1
-    num_epochs = 100
+    num_epochs = 20
     batch_size = 1
     log_train_loss = []
     log_eval_loss = []
@@ -141,13 +155,30 @@ if __name__ == "__main__":
     MyModel.cuda()
     print(MyModel)
     
+    logging.info(f'Model info: {str(MyModel)}')
+    
+    logging.info("======================================")
+    logging.info("Hyperparameters:")
+    logging.info(f"Train Data Ratio: {train_data_ratio}")
+    logging.info(f"Eval Data Ratio: {eval_data_ratio}")
+    logging.info(f"Test Data Ratio: {test_data_ratio}")
+    logging.info(f"Input1 Channels: {input1_channels}")
+    logging.info(f"Input2 Size: {input2_size}")
+    logging.info(f"Input3 Size: {input3_size}")
+    logging.info(f"Hidden Size: {hidden_size}")
+    logging.info(f"Output Size: {output_size}")
+    logging.info(f"Number of Epochs: {num_epochs}")
+    logging.info(f"Batch Size: {batch_size}")
+    logging.info("======================================")
+
+    
     criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.SGD(MyModel.parameters(), lr=0.001)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, verbose=True)
     
-    train_loader, eval_loader, test_loader = split_dataset(train_data_ratio, 
+    test_loader, train_loader, eval_loader = split_dataset(test_data_ratio, 
+                                                           train_data_ratio, 
                                                            eval_data_ratio, 
-                                                           test_data_ratio, 
                                                            data_path_list, 
                                                            batch_size, 
                                                            device_name)
@@ -175,33 +206,55 @@ if __name__ == "__main__":
         eval_loss = 0
         eval_bar = tqdm(eval_loader, desc=f'Epoch {e+1}/{num_epochs}, Evaluating')
         with torch.no_grad():
+            eval_acc = 0.0
+            eval_cnt = 0.0
+            wrong_pred_list = []
             for idx, data in enumerate(eval_loader):
                 q_value_map, q2_output, action, reward = data
                 output = MyModel(q_value_map, q2_output, action)
                 loss = criterion(output, reward)
                 eval_loss += loss.item()
                 eval_bar.update()
+                
+                eval_cnt += 1
+                if (output>0.5 and 1 == reward) or (output<=0.5 and 0 == reward):
+                    eval_acc += 1
+                else:
+                    wrong_pred_list.append(eval_cnt)
+            logging.info(wrong_pred_list)
 
         avg_eval_loss = eval_loss / len(eval_loader.dataset)
         log_eval_loss.append(avg_eval_loss)
         
+        logging.info(f'Epoch {e+1}/{num_epochs}, Average Train Loss: {avg_train_loss:.4f}, Average Eval Loss: {avg_eval_loss:.4f}, eval_acc_rate: {eval_acc/eval_cnt:.4f}')
         print(f'Epoch {e+1}/{num_epochs}, Average Train Loss: {avg_train_loss:.4f}, Average Eval Loss: {avg_eval_loss:.4f}')
+        print(f'Eval_acc_rate: {eval_acc/eval_cnt:.4f}')
         
         if avg_eval_loss < best_eval_loss:
             best_eval_loss = avg_eval_loss
-            torch.save(MyModel.state_dict(), 'best_model_checkpoint.pth')
+            torch.save(MyModel.state_dict(), f'./model_train_log/log_{timestamp}_ckpt.pth')
+            
         
     MyModel.eval()
     test_loss = 0
     with torch.no_grad():
+        test_cnt = 0.0
+        test_acc = 0.0
         for idx, data in enumerate(test_loader):
             q_value_map, q2_output, action, reward = data
             output = MyModel(q_value_map, q2_output, action)
             loss = criterion(output, reward)
             log_test_loss.append(loss.detach().item())
             test_loss += loss.item()
+            test_cnt += 1
+            if (output>0.5 and 1 == reward) or (output<=0.5 and 0 == reward):
+                test_acc += 1
+            else:
+                pass
     avg_test_loss = test_loss / len(test_loader.dataset)
     print(f'Average Test Loss: {avg_test_loss:.4f}')
+    
+    logging.info(f'Average Test Loss: {avg_test_loss:.4f}, Test_pred_acc: {test_acc/test_cnt:.4f}')
     
     plt.plot(log_train_loss, label='Train Loss')
     plt.plot(log_eval_loss, label='Eval Loss')

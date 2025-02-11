@@ -15,6 +15,9 @@ from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
+import logging
+import time
+
 from train import CustomDataset
 from train import CustomModel
 from train import set_random_seed
@@ -31,7 +34,7 @@ if __name__ == "__main__":
     set_random_seed(42)
     data_path_list = generate_path_list()
     data_num = len(data_path_list)
-    random.shuffle(data_path_list)
+    # random.shuffle(data_path_list)
     
     train_data_ratio = 0.8
     eval_data_ratio = 0.1
@@ -58,7 +61,7 @@ if __name__ == "__main__":
                                                            batch_size, 
                                                            device_name)
     
-    checkpoint = torch.load('best_model_checkpoint.pth')
+    checkpoint = torch.load('model_train_log/log_20240912-133602_ckpt.pth')
     MyModel.load_state_dict(checkpoint)
     with torch.no_grad():
         test_loss = 0
@@ -76,7 +79,7 @@ if __name__ == "__main__":
             log_test_loss.append(loss.detach().item())
             test_loss += loss.item()
 
-            # 计算预测值和真实值
+            # prediction and ground truth
             predicted = (sigmoid_output > 0.5).float()
             total += reward.size(0)
             correct += (predicted == reward).sum().item()
@@ -99,3 +102,19 @@ if __name__ == "__main__":
     
     avg_test_loss = test_loss / len(test_loader.dataset)
     print(f'Average Test Loss: {avg_test_loss:.4f}')
+    
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    log_directory = './model_inference_log'  
+    os.makedirs(log_directory, exist_ok=True)  
+    log_filename = os.path.join(log_directory, f'log_{timestamp}.log')
+        
+    logging.basicConfig(filename=log_filename, level=logging.INFO, format='%(asctime)s - %(message)s')
+
+    logging.info(f'Accuracy: {accuracy:.4f}')
+    logging.info(f'Precision: {precision:.4f}')
+    logging.info(f'Recall: {recall:.4f}')
+    logging.info(f'F1 Score: {f1:.4f}')
+    logging.info(f'False Negatives: {false_negatives}, True Positives: {true_positives}')
+    logging.info(f'False Positives: {false_positives}, True Negatives: {true_negatives}')
+    
+    logging.info(f'Average Test Loss: {avg_test_loss:.4f}')
