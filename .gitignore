@@ -1,3 +1,9 @@
+# new gitignore items for confidential purposes
+pyredner_test.py
+pyredner_heightmap.png
+observation_comparison.png
+pybullet_gym_pybullet_data_tray/
+
 # User
 docs/html
 docs/doctrees

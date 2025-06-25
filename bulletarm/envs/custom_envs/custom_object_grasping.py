@@ -297,10 +297,19 @@ class ObjectGrasping(BaseEnvPyRedner):
     
     def _getObservation(self, action=None):
         tray_mesh = self.sensor_pyredner.getTrayMesh()
-        meshes = [tray_mesh]
-        state, in_hand, obs = super(ObjectGrasping, self)._getObservation(meshes)
+        state, in_hand, obs = super(ObjectGrasping, self)._getObservation(tray_mesh)
         
         return 0, torch.zeros_like(in_hand), obs
+
+    # def _getHeightmap(self, action=None):
+    #     tray_mesh = self.sensor_pyredner.getTrayMesh()
+    #     meshes = [tray_mesh]
+    #     heightmap = super(ObjectGrasping, self)._getHeightmap(meshes)
+
+    def getDepthmap(self, action=None):
+        tray_mesh = self.sensor_pyredner.getTrayMesh()
+        depthmap = super(ObjectGrasping, self)._getDepthmap(tray_mesh)
+        return depthmap
     
     def setObjectInitMetaData(self, object_init_metadata=None):
         """ IMPORTANT: This function should be called no more than once per environment reset."""

@@ -8,7 +8,7 @@ import sys
 import os
 from pathlib import Path
 import bulletarm.pybullet.utils.constants as constants
-
+pyredner.set_print_timing(False)
 
 class Sensor(object):
   def __init__(self, cam_pos, cam_up_vector, target_pos, target_size, near, far):
@@ -117,9 +117,8 @@ class SensorPyRedner(object):
       up=self.cam_up_vector,
       fov=self.fov,  # in degrees
       clip_near=1e-2,  # needs to be > 0
-      resolution=(self.heightmap_size, self.heightmap_size)
+      resolution=(self.heightmap_size, self.heightmap_size),
     )
-
 
   def getMeshes(self, meta_data):
       
@@ -150,36 +149,79 @@ class SensorPyRedner(object):
 
   def getTrayMesh(self):
     root_dir = Path(__file__).parent.parent.parent
-    tray_path = os.path.join(root_dir, constants.OBJECTS_PATH, 'GraspNet1B_object/tray/tray.obj')
-    tray_mesh = pyredner.load_obj(tray_path, return_objects=True)[0]
-    tray_mesh.vertices = tray_mesh.vertices.to(self.device)
-    tray_mesh.vertices = tray_mesh.vertices * 1e-3
-    tray_mesh.vertices = tray_mesh.vertices + self.shift
-    
-    return tray_mesh
-    self.tray_mesh = tray_mesh
+    tray_path = os.path.join(root_dir, constants.OBJECTS_PATH, 'GraspNet1B_object/tray/tray_textured.obj')
+    tray_mesh = pyredner.load_obj(tray_path, return_objects=True)
+    quat = (0, 0, 0, 1)  # Identity quaternion
+    rotation_matrix = torch.tensor(
+        quaternions.quat2mat(quat), 
+        dtype=torch.float32, 
+        device=self.device
+    )
+    x_y_z_scale = torch.tensor([0.344, 0.344, 0.135], dtype=torch.float32, device=self.device)
 
-    
-  def getHeightmap(self, meshes):
-    # Implement heightmap generation logic here
+    transformed_mesh = []
+    for tray_part in tray_mesh:
+      tmp = tray_part.vertices.clone().float().to(self.device)
+      rotated_tmp = torch.matmul(tmp, rotation_matrix.T)
+      scaled_tmp = rotated_tmp * x_y_z_scale
+      shifted_tmp = scaled_tmp + self.shift 
+      tray_part.vertices = shifted_tmp
+      transformed_mesh.append(tray_part)
+
+    return transformed_mesh
+
+  def getDepthmap(self, meshes):
     scene = pyredner.Scene(camera=self.camera, objects=meshes)
     chan_list = [pyredner.channels.depth]
     depth_img = pyredner.render_generic(scene, chan_list, device=self.device)
+
+    return depth_img.reshape([self.heightmap_size, self.heightmap_size])
     
-    near = 0.09
-    far = 0.010
-    slope = 37821.71428571428
-    intercept = - 3407.3605408838816
-
-    depth = near * far / (far - depth_img)
-    heightmap = torch.abs(depth - torch.max(depth))
-
-    # Apply scaling and thresholding
-    heightmap = heightmap * slope + intercept
-    heightmap = torch.relu(heightmap)
-    heightmap = torch.where(heightmap > 1.0, 6e-3, heightmap)
+  # def _getHeightmap(self, meshes):
+  #   # Implement heightmap generation logic here
+  #   scene = pyredner.Scene(camera=self.camera, objects=meshes)
+  #   chan_list = [pyredner.channels.depth]
+  #   depth_img = pyredner.render_generic(scene, chan_list, device=self.device)
     
-    heightmap =  heightmap.reshape([self.heightmap_size, self.heightmap_size])
-    return heightmap
+  #   near = 0.09
+  #   far = 0.010
+  #   slope = 37821.71428571428
+  #   intercept = - 3407.3605408838816
 
+  #   depth = near * far / (far - depth_img)
+  #   heightmap = torch.abs(depth - torch.max(depth))
+
+  #   # Apply scaling and thresholding
+  #   heightmap = heightmap * slope + intercept
+  #   heightmap = torch.relu(heightmap)
+  #   heightmap = torch.where(heightmap > 1.0, torch.tensor(6e-3).to(self.device), heightmap)
+    
+  #   heightmap =  heightmap.reshape([self.heightmap_size, self.heightmap_size])
+  #   return heightmap
+
+  def getHeightmap(self, meshes):
+    scene = pyredner.Scene(camera=self.camera, objects=meshes)
+    chan_list = [pyredner.channels.position, pyredner.channels.alpha]
+    rendered_output = pyredner.render_generic(scene, chan_list, device=self.device)
+    # Extract world positions and alpha mask
+    # rendered_output shape: [heightmap_size, heightmap_size, 4]
+    # Channels 0-2: world position (X, Y, Z)
+    # Channel 3: alpha (foreground mask)
+    world_positions = rendered_output[:, :, :3]  # [H, W, 3]
+    alpha_mask = rendered_output[:, :, 3]        # [H, W]
+    heightmap = world_positions[:, :, 2] # Z component
+    valid_mask = alpha_mask > 0.5
+  
+    if torch.sum(valid_mask) > 0:
+        # Find minimum height in the scene to use for background
+        min_height = torch.min(heightmap[valid_mask])
+        
+        # Create final heightmap
+        final_heightmap = heightmap.clone()
+        final_heightmap[~valid_mask] = min_height
+    else:
+        # If no valid pixels, return zeros
+        final_heightmap = torch.zeros_like(heightmap)
+    
+    return final_heightmap.reshape([self.heightmap_size, self.heightmap_size])
   

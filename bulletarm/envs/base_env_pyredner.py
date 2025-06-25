@@ -165,6 +165,7 @@ class BaseEnvPyRedner(object):
     self.target_pos = [self.workspace[0].mean(), self.workspace[1].mean(), 0]
     self.cam_up_vector = [-1, 0, 0]
     self.fov = np.degrees(2 * np.arctan((ws_size / 2) / self.cam_pos[2]))
+    self.sensor = Sensor(self.cam_pos, self.cam_up_vector, self.target_pos, ws_size, self.cam_pos[2] - 1, self.cam_pos[2])
     self.sensor_pyredner = SensorPyRedner(config)
 
     # Rest pose for arm
@@ -315,7 +316,7 @@ class BaseEnvPyRedner(object):
     '''
     self.takeAction(action)
     self.wait(100)
-    obs = self._getObservation(action)
+    obs = self._getObservation(action=action)
     done = self._checkTermination()
     reward = 1.0 if done else 0.0
 
@@ -409,6 +410,7 @@ class BaseEnvPyRedner(object):
   def updateObjectMetaData(self):
       self.object_metadata = [obj.getMetaData() for obj in self.objects]
         
+  @version('pyredner')
   def _getObservation(self, meshes, action=None):
     '''same structure as the original getObservation, but calls the pyredner sensor'''
     old_heightmap = copy.copy(self.heightmap)
@@ -422,12 +424,21 @@ class BaseEnvPyRedner(object):
 
     return self._isHolding(), in_hand_img, self.heightmap.reshape([1, self.heightmap_size, self.heightmap_size])
 
+  @version('pyredner')
   def _getHeightmap(self, meshes):
     for j, obj in enumerate(self.getObjects()):
         meta_data = obj.getMetaData() # only for GraspNetObject
         mesh, (position, rotation_matrix) = self.sensor_pyredner.getMeshes(meta_data)
         meshes.append(mesh)
     return self.sensor_pyredner.getHeightmap(meshes)
+
+  @version('pyredner')
+  def _getDepthmap(self, meshes):
+    for j, obj in enumerate(self.getObjects()):
+        meta_data = obj.getMetaData()
+        mesh, (position, rotation_matrix) = self.sensor_pyredner.getMeshes(meta_data)
+        meshes.append(mesh)
+    return self.sensor_pyredner.getDepthmap(meshes)
 
 
   def _getValidPositions(self, border_padding, min_distance, existing_positions, num_shapes, sample_range=None):

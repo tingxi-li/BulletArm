@@ -495,6 +495,9 @@ class SingleRunner(object):
     self.env.updateObjectMetaData()
     return self.env.object_metadata
 
+  def getDepthmap(self):
+    return self.env.getDepthmap()
+
   def save(self):
     '''
     Locally saves the current state of the environment.
