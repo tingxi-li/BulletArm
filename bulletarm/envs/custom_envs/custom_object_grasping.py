@@ -18,6 +18,14 @@ import json
 import pyredner
 from . import custom_utils
 
+
+root_dir = os.path.dirname(bulletarm.__file__)
+obj_pattern = os.path.join(root_dir, constants.OBJECTS_PATH, 'GraspNet1B_object/0*/')
+found_object_directories = sorted(glob.glob(obj_pattern))
+total_num_objects = len(found_object_directories)
+
+
+
 class ObjectGrasping(BaseEnvPyRedner):
     def __init__(self, config):
         # env specific parameters
@@ -322,13 +330,16 @@ class ObjectGrasping(BaseEnvPyRedner):
                 _x = _x + self.workspace[0].mean()
                 _y = _y + self.workspace[1].mean()
                 
+                index = np.random.choice(np.arange(total_num_objects), 1)[0]
+                
                 _info = {
                     "scale": None,
                     "position": [[_x.item(), _y.item(), 0.40]],
                     "rotation": None, # it has to be in [[]], like position
-                    "index": -1,
+                    "index": index,
                 }
                 object_init_metadata.append(_info)
+                # print("index: ", index)
         else:
             pass
         

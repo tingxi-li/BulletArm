@@ -268,7 +268,19 @@ class EquResUNet(torch.nn.Module):
         self.upsample_2_1 = nn.R2Upsampling(nn.FieldType(self.r2_act, self.l1_c * [self.repr]), 2)
 
     def forwardEncoder(self, obs):
-        obs_gt = nn.GeometricTensor(obs, nn.FieldType(self.r2_act, obs.shape[1] * [self.r2_act.trivial_repr]))
+        # obs_gt = nn.GeometricTensor(obs, nn.FieldType(self.r2_act, obs.shape[1] * [self.r2_act.trivial_repr]))
+        
+        # Wrap raw tensor with the exact FieldType expected by the first R2Conv
+        if not isinstance(obs, nn.GeometricTensor):
+            if obs.dim() == 3:  # (C,H,W) -> (1,C,H,W)
+                obs = obs.unsqueeze(0)
+            expected_c = self.conv_down_1[0].in_type.size
+            if obs.shape[1] != expected_c:
+                raise RuntimeError(f"EquResUNet expects {expected_c} input channels, got {obs.shape[1]}")
+            obs_gt = nn.GeometricTensor(obs, self.conv_down_1[0].in_type)
+        else:
+            obs_gt = obs
+            
         feature_map_1 = self.conv_down_1(obs_gt)
         feature_map_2 = self.conv_down_2(feature_map_1)
         feature_map_4 = self.conv_down_4(feature_map_2)

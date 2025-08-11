@@ -20,6 +20,9 @@ class Base3D(BaseAgent):
         y = plan[:, 1:2]
         rot = plan[:, 2:3]
         states = plan[:, 3:4]
+        
+        # import pdb; pdb.set_trace() 
+        
         pixel_x = ((x - self.workspace[0][0]) / self.heightmap_resolution).long()
         pixel_y = ((y - self.workspace[1][0]) / self.heightmap_resolution).long()
         pixel_x = torch.clamp(pixel_x, 0, self.heightmap_size-1)

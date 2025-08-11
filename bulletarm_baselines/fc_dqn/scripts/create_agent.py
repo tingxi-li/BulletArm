@@ -55,7 +55,8 @@ def createAgent(test=False):
     elif model == 'equ_resu_df':
         fcn = EquResUDFReg(1, fcn_out, domain_shape=(1, diag_length, diag_length), patch_shape=patch_shape, N=equi_n, initialize=initialize).to(device)
     # equivariant asr q1 with dynamic filter using dihedral group
-    elif model == 'equ_resu_df_flip':
+    elif model == 'equ_resu_df_flip': 
+        # <- 3D Open Loop: [alg] margin_asr; [algorithm] sdqfd; [arch] equi_fcn; [DoF] xyrp; [model] equ_resu_df_flip; [q2_model] equ_shift_df
         fcn = EquResUDFReg(1, fcn_out, domain_shape=(1, diag_length, diag_length), patch_shape=patch_shape, N=equi_n, flip=True, initialize=initialize).to(device)
     # equivariant fcn with dynamic filter
     elif model == 'equ_resu_df_nout':
@@ -124,6 +125,7 @@ def createAgent(test=False):
                                  num_rotations, rz_range)
                 agent.initNetwork(fcn, q2)
             elif alg == 'margin_asr':
+                # <- 3D Open Loop: [alg] margin_asr; [algorithm] sdqfd; [arch] equi_fcn; [DoF] xyrp; [model] equ_resu_df_flip; [q2_model] equ_shift_df
                 agent = Margin3DASR(workspace, heightmap_size, device, lr, gamma, sl, num_primitives, patch_size,
                                     num_rotations, rz_range, margin, margin_l, margin_weight, margin_beta)
                 agent.initNetwork(fcn, q2)

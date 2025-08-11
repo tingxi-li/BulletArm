@@ -209,7 +209,7 @@ if action_sequence == 'xyp':
 
 elif action_sequence == 'xyrp':
   # 3D Benchmark
-  if architecture == 'equi_asr':
+  if architecture == 'equi_asr': # <- 3D open loop: sdqfd, equi_fcn, xyrp
     alg = '{}_asr'
     model = 'equ_resu_df_flip'
     q2_model = 'equ_shift_df'
@@ -252,7 +252,7 @@ if algorithm == 'dqn':
   alg = alg.format('dqn')
 else:
   alg = alg.format('margin')
-  if algorithm == 'sdqfd':
+  if algorithm == 'sdqfd': # <- 3D Open Loop: [alg] margin_asr; [algorithm] sdqfd; [arch] equi_fcn; [DoF] xyrp; [model] equ_resu_df_flip; [q2_model] equ_shift_df
     margin = 'l'
     if margin_weight is None:
       margin_weight = 0.1

@@ -7,9 +7,11 @@ class EnvWrapper:
 
     def reset(self):
         (states, in_hands, obs) = self.envs.reset()
-        states = torch.tensor(states).float()
-        in_hands = torch.tensor(in_hands).float()
-        obs = torch.tensor(obs).float()
+
+        states   = torch.as_tensor(states,   dtype=torch.float).detach().clone()
+        in_hands = torch.as_tensor(in_hands, dtype=torch.float).detach().clone()
+        obs      = torch.as_tensor(obs,      dtype=torch.float).detach().clone()
+        
         return states, in_hands, obs
 
     def getNextAction(self):
@@ -18,11 +20,11 @@ class EnvWrapper:
     def step(self, actions, auto_reset=False):
         actions = actions.cpu().numpy()
         (states_, in_hands_, obs_), rewards, dones = self.envs.step(actions, auto_reset)
-        states_ = torch.tensor(states_).float()
-        in_hands_ = torch.tensor(in_hands_).float()
-        obs_ = torch.tensor(obs_).float()
-        rewards = torch.tensor(rewards).float()
-        dones = torch.tensor(dones).float()
+        states_   = torch.as_tensor(states_,   dtype=torch.float).detach().clone()
+        in_hands_ = torch.as_tensor(in_hands_, dtype=torch.float).detach().clone()
+        obs_      = torch.as_tensor(obs_,      dtype=torch.float).detach().clone()
+        rewards   = torch.as_tensor(rewards,   dtype=torch.float).detach().clone()
+        dones     = torch.as_tensor(dones,     dtype=torch.float).detach().clone()
         return states_, in_hands_, obs_, rewards, dones
 
     def stepAsync(self, actions, auto_reset=False):
