@@ -135,22 +135,24 @@ def train():
     exploration = LinearSchedule(schedule_timesteps=explore, initial_p=init_eps, final_p=final_eps)
 
     envs.envs.setObjectInitMetaData()
-    # import pdb; pdb.set_trace()
     
     states, in_hands, obs = envs.reset()
 
     if load_sub:
         logger.loadCheckPoint(os.path.join(base_dir, load_sub, 'checkpoint'), agent.loadFromState, replay_buffer.loadFromState)
 
+    if num_processes == 0 and num_eval_processes == 0:
+        SINGLE_PROC = True
+        # num_processes = 1
+    else:
+        SINGLE_PROC = False
+    
+    
     if planner_episode > 0 and not load_sub:
         if fill_buffer_deconstruct:
             fillDeconstructUsingRunner(agent, replay_buffer)
         else:
             planner_envs = envs
-            if num_processes == 0:
-                SINGLE_PROC = True
-            else:
-                SINGLE_PROC = False
             planner_num_process = num_processes
             j = 0
             states, in_hands, obs = planner_envs.reset()
@@ -158,10 +160,9 @@ def train():
             if not no_bar:
                 planner_bar = tqdm(total=planner_episode)
                             
-            local_transitions = [[] for _ in range(planner_num_process)]
+            local_transitions = [[] for _ in range(max(planner_num_process, 1))]
             while j < planner_episode:
                 
-                # import pdb; pdb.set_trace() 
                 try:
                     plan_actions = planner_envs.getNextAction()
                 except Exception as e:
@@ -175,76 +176,38 @@ def train():
                 if SINGLE_PROC:
                     plan_actions = plan_actions.unsqueeze(0)
                     planner_actions_star_idx, planner_actions_star = agent.getActionFromPlan(plan_actions)
-                    
                     planner_actions_star = planner_actions_star.squeeze(0)
-                    states = states.unsqueeze(0)
-                    in_hands = in_hands.unsqueeze(0)
-                    obs = obs.unsqueeze(0)
-                    
                     planner_actions_star = torch.cat((planner_actions_star, states), dim=0)
-                    states_, in_hands_, obs_, rewards, dones = planner_envs.step(planner_actions_star, auto_reset=True)
-                    buffer_obs = getCurrentObs(in_hands, obs)
-                    buffer_obs_ = getCurrentObs(in_hands_, obs_)
-                    
                 else:
                     planner_actions_star_idx, planner_actions_star = agent.getActionFromPlan(plan_actions)
                     planner_actions_star = torch.cat((planner_actions_star, states.unsqueeze(1)), dim=1)
-                    states_, in_hands_, obs_, rewards, dones = planner_envs.step(planner_actions_star, auto_reset=True)
-                    buffer_obs = getCurrentObs(in_hands, obs)
-                    buffer_obs_ = getCurrentObs(in_hands_, obs_)
-
-                if SINGLE_PROC:
-                    transition = ExpertTransition(states, buffer_obs, planner_actions_star_idx, rewards, states_, buffer_obs_, dones, torch.tensor(100), torch.tensor(1))
-                    local_transitions.append(transition)
-                else:
-                    for i in range(planner_num_process):
-                        transition = ExpertTransition(states[i], buffer_obs[i], planner_actions_star_idx[i], rewards[i], states_[i],
-                                                        buffer_obs_[i], dones[i], torch.tensor(100), torch.tensor(1))
-                        local_transitions[i].append(transition)
                     
-                # import pdb; pdb.set_trace() 
-                
+                states_, in_hands_, obs_, rewards, dones = planner_envs.step(planner_actions_star, auto_reset=True)
+                    
+                buffer_obs = getCurrentObs(in_hands, obs)
+                buffer_obs_ = getCurrentObs(in_hands_, obs_)
+
+
+                for i in range(max(planner_num_process, 1)):
+                    transition = ExpertTransition(states[i], buffer_obs[i], planner_actions_star_idx[i], rewards[i], states_[i], buffer_obs_[i], dones[i], torch.tensor(100), torch.tensor(1))
+                    local_transitions[i].append(transition)
+                                    
                 states = copy.copy(states_)
                 obs = copy.copy(obs_)
                 in_hands = copy.copy(in_hands_)
 
-                if SINGLE_PROC:
-                    if dones and rewards:
-                        replay_buffer.add(local_transitions)
-                        local_transitions = []
+                for i in range(max(planner_num_process, 1)):
+                    if dones[i] and rewards[i]:
+                        for t in local_transitions[i]:
+                            replay_buffer.add(t)
+                        local_transitions[i] = []
                         j += 1
                         s += 1
                         if not no_bar:
                             planner_bar.set_description('{:.3f}/{}, AVG: {:.3f}'.format(s, j, float(s) / j if j != 0 else 0))
                             planner_bar.update(1)
-                    elif dones:
-                        local_transitions = []
-                else:
-                    for i in range(planner_num_process):
-                        if dones[i] and rewards[i]:
-                            for t in local_transitions[i]:
-                                replay_buffer.add(t)
-                            local_transitions[i] = []
-                            j += 1
-                            s += 1
-                            if not no_bar:
-                                planner_bar.set_description('{:.3f}/{}, AVG: {:.3f}'.format(s, j, float(s) / j if j != 0 else 0))
-                                planner_bar.update(1)
-                        elif dones[i]:
-                            local_transitions[i] = []
-                            
-                # for i in range(planner_num_process):
-                #   if dones[i] and rewards[i]:
-                #     for t in local_transitions[i]:
-                #       replay_buffer.add(t)
-                #     local_transitions[i] = []
-                #     j += 1
-                #     s += 1
-                #     if not no_bar:
-                #       planner_bar.set_description('{:.3f}/{}, AVG: {:.3f}'.format(s, j, float(s) / j if j != 0 else 0))
-                #       planner_bar.update(1)
-                #   elif dones[i]:
-                #     local_transitions[i] = []
+                    elif dones[i]:
+                        local_transitions[i] = []
 
         if expert_aug_n > 0:
             augmentBuffer(replay_buffer, expert_aug_n, agent.rzs)
@@ -280,35 +243,44 @@ def train():
             eps = exploration.value(logger.num_eps)
         is_expert = 0
         
-        import pdb; pdb.set_trace()
-        
         q_value_maps, actions_star_idx, actions_star = agent.getEGreedyActions(states, in_hands, obs, eps)
-        
+                
         buffer_obs = getCurrentObs(in_hands, obs)
-        actions_star = torch.cat((actions_star, states.unsqueeze(1)), dim=1)
-        envs.stepAsync(actions_star, auto_reset=False)
+        
+        if SINGLE_PROC:
+            actions_star = torch.cat((actions_star.squeeze(), states), dim=0)
+        else:
+            actions_star = torch.cat((actions_star, states.unsqueeze(1)), dim=1)
+            envs.stepAsync(actions_star, auto_reset=False)
 
         if len(replay_buffer) >= training_offset:
             for training_iter in range(training_iters):
                 train_step(agent, replay_buffer, logger)
+                
+        # import pdb; pdb.set_trace()
 
-        states_, in_hands_, obs_, rewards, dones = envs.stepWait()
-
-        done_idxes = torch.nonzero(dones).squeeze(1)
-        if done_idxes.shape[0] != 0:
+        if SINGLE_PROC:
+            states_, in_hands_, obs_, rewards, dones = envs.step(actions_star, auto_reset=False)
+            done_idxes = torch.nonzero(dones).squeeze(1)
+            reset_states_, reset_in_hands_, reset_obs_ = envs.reset()
+        else:
+            states_, in_hands_, obs_, rewards, dones = envs.stepWait()
+            done_idxes = torch.nonzero(dones).squeeze(1)
             reset_states_, reset_in_hands_, reset_obs_ = envs.reset_envs(done_idxes)
+            
+        done_idxes = torch.nonzero(dones).squeeze(1)
+        if done_idxes.shape[0] != 0:            
             for j, idx in enumerate(done_idxes):
                 states_[idx] = reset_states_[j]
                 in_hands_[idx] = reset_in_hands_[j]
                 obs_[idx] = reset_obs_[j]
 
+        
         buffer_obs_ = getCurrentObs(in_hands_, obs_)
 
-        for i in range(num_processes):
-            replay_buffer.add(
-                ExpertTransition(states[i], buffer_obs[i], actions_star_idx[i], rewards[i], states_[i],
-                                 buffer_obs_[i], dones[i], torch.tensor(100), torch.tensor(is_expert))
-            )
+        for i in range(max(num_processes, 1)):
+            replay_buffer.add(ExpertTransition(states[i], buffer_obs[i], actions_star_idx[i], rewards[i], states_[i], buffer_obs_[i], dones[i], torch.tensor(100), torch.tensor(is_expert)))
+                
         logger.logStep(rewards.numpy(), dones.numpy())
 
         states = copy.copy(states_)
@@ -335,7 +307,7 @@ def train():
             eval_thread = threading.Thread(target=evaluate, args=(eval_envs, eval_agent, logger))
             eval_thread.start()
 
-        if logger.num_steps % (num_processes * save_freq) == 0:
+        if logger.num_steps % (max(num_processes,1) * save_freq) == 0:
             saveModelAndInfo(logger, agent)
 
     if eval_thread is not None:

@@ -11,8 +11,10 @@ class EnvWrapper:
         states   = torch.as_tensor(states,   dtype=torch.float).detach().clone()
         in_hands = torch.as_tensor(in_hands, dtype=torch.float).detach().clone()
         obs      = torch.as_tensor(obs,      dtype=torch.float).detach().clone()
-        
-        return states, in_hands, obs
+        if obs.ndim == 4:
+            return states, in_hands, obs
+        elif obs.ndim == 3:
+            return states.unsqueeze(0), in_hands.unsqueeze(0), obs.unsqueeze(0)
 
     def getNextAction(self):
         return torch.tensor(self.envs.getNextAction()).float()
@@ -25,7 +27,10 @@ class EnvWrapper:
         obs_      = torch.as_tensor(obs_,      dtype=torch.float).detach().clone()
         rewards   = torch.as_tensor(rewards,   dtype=torch.float).detach().clone()
         dones     = torch.as_tensor(dones,     dtype=torch.float).detach().clone()
-        return states_, in_hands_, obs_, rewards, dones
+        if obs_.ndim == 4:
+            return states_, in_hands_, obs_, rewards, dones
+        elif obs_.ndim == 3:
+            return states_.unsqueeze(0), in_hands_.unsqueeze(0), obs_.unsqueeze(0), rewards.unsqueeze(0), dones.unsqueeze(0)
 
     def stepAsync(self, actions, auto_reset=False):
         actions = actions.cpu().numpy()

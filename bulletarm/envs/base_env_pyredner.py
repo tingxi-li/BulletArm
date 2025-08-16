@@ -27,6 +27,9 @@ from bulletarm.pybullet.objects.pybullet_object import PybulletObject
 import bulletarm.pybullet.utils.object_generation as pb_obj_generation
 from bulletarm.pybullet.utils.constants import NoValidPositionException
 
+import threading
+_SIM_LOCK = threading.Lock()
+
 
 def version(ver):
     def decorator(func):
@@ -389,7 +392,10 @@ class BaseEnvPyRedner(object):
 
   def wait(self, iteration):
     [pb.stepSimulation() for _ in range(iteration)]
-
+    # with _SIM_LOCK:
+    #   for _ in range(iteration):
+    #     pb.stepSimulation()
+        
   def didBlockFall(self):
     if self.last_action is None:
       return False
