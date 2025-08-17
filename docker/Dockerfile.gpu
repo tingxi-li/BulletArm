@@ -1,0 +1,57 @@
+# 与 NVIDIA 535 驱动兼容的 CUDA 11.8 运行时
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu20.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    MAMBA_ROOT_PREFIX=/opt/conda
+
+# 基础依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl bzip2 build-essential git \
+    libglib2.0-0 libgl1 libx11-6 \
+ && rm -rf /var/lib/apt/lists/*
+
+# 安装 micromamba（轻量稳定）
+RUN curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest \
+    | tar -xvj -C /usr/local/bin --strip-components=1 bin/micromamba
+
+# 创建非 root 用户，避免权限坑
+RUN useradd -m -u 1000 appuser && mkdir -p /app && chown -R appuser:appuser /app
+
+WORKDIR /app
+
+# 先创建 Python 3.7.16 的 env
+RUN micromamba create -y -n bulletarm python=3.7.16 && \
+    micromamba clean --all --yes
+
+# 设定默认 shell
+SHELL ["bash", "-lc"]
+
+# （可选）安装 PyTorch 1.13.1 + cu117（与你的 Py3.7 最稳的组合）
+# 如果项目不依赖 PyTorch，可以注释掉本段
+RUN micromamba run -n bulletarm python -m pip install --upgrade pip && \
+    micromamba run -n bulletarm pip install \
+      torch==1.13.1+cu117 torchvision==0.14.1+cu117 torchaudio==0.13.1 \
+      --extra-index-url https://download.pytorch.org/whl/cu117
+
+# 先拷贝依赖清单并安装（利用缓存）
+COPY requirements.txt /app/requirements.txt
+RUN if [ -s /app/requirements.txt ]; then \
+      micromamba run -n bulletarm pip install -r /app/requirements.txt ; \
+    fi
+
+# 再拷贝全部源码
+COPY . /app
+
+# 确保后续在容器里能写入/升级包（持久化卷也能写）
+RUN chown -R appuser:appuser /app /opt/conda
+USER appuser
+
+# 入口脚本：自动设 PYTHONPATH & 激活环境；有命令就执行，没命令就进 shell
+RUN chmod +x /app/docker/entrypoint.sh
+ENTRYPOINT ["/app/docker/entrypoint.sh"]
+
+# 开发模式不强制跑程序，默认进交互 shell（也方便你传命令覆盖）
+CMD []

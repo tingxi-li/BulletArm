@@ -1,0 +1,16 @@
+.git
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+.env
+data/
+outputs/
+dist/
+build/
+.cache/
+logs/
+wandb/
+.vscode/
+.idea/
