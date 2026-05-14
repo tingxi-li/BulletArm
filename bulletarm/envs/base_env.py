@@ -315,6 +315,7 @@ class BaseEnv:
     return obs, reward, done
 
   def takeAction(self, action):
+    # import pdb;pdb.set_trace()
     motion_primative, x, y, z, rot = self._decodeAction(action)
     self.last_action = action
     self.last_obj = self.robot.holding_obj

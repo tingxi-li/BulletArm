@@ -151,7 +151,45 @@ class ObjectGrasping(BaseEnvPyRedner):
         self.current_episode_steps += 1
 
         return obs, reward, True
-    
+
+
+    def takeAction(self, action):
+        # import pdb;pdb.set_trace()
+        """make compatible for single process mode"""
+        if len(action) == 1:
+            action = action[0]
+            
+        motion_primative, x, y, z, rot = self._decodeAction(action)
+        self.last_action = action
+        self.last_obj = self.robot.holding_obj
+
+        # Get transform for action
+        pos = [x, y, z]
+        rot_q = pb.getQuaternionFromEuler(rot)
+
+        # Take action specfied by motion primative
+        if motion_primative == constants.PICK_PRIMATIVE:
+            if self.robot.holding_obj is None:
+                if self.perfect_grasp and not self._checkPerfectGrasp(x, y, z, rot, self.objects):
+                    return
+            self.robot.pick(pos, rot_q, self.pick_pre_offset, dynamic=self.dynamic,
+                            objects=self.objects, simulate_grasp=self.simulate_grasp, top_down_approach=self.pick_top_down_approach)
+        elif motion_primative == constants.PLACE_PRIMATIVE:
+            obj = self.robot.holding_obj
+            if self.robot.holding_obj is not None:
+                if self.perfect_place and not self._checkPerfectPlace(x, y, z, rot, self.objects):
+                    return
+                self.robot.place(pos, rot_q, self.place_pre_offset,
+                            dynamic=self.dynamic, simulate_place=self.simulate_grasp, top_down_approach=self.place_top_down_approach)
+        elif motion_primative == constants.PUSH_PRIMATIVE:
+            pass
+        elif motion_primative == constants.PULL_PRIMATIVE:
+            self.robot.pull(pos, rot_q, self.pull_offset, dynamic=self.dynamic)
+        else:
+            raise ValueError('Bad motion primative supplied for action.')
+
+
+
     def isSimValid(self):
         for obj in self.objects:
             p = obj.getPosition()
@@ -344,6 +382,7 @@ class ObjectGrasping(BaseEnvPyRedner):
             pass
         
         self.object_init_metadata = object_init_metadata
+        return object_init_metadata
 
 def createCustomObjectGrasping(config):
     return ObjectGrasping(config)

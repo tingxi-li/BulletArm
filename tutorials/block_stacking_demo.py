@@ -108,4 +108,25 @@ def run_adversarial_tests(config):
                 print(f"[{time.strftime('%H:%M:%S')}] Completed {test_id}/{config['NUM_TESTS']}")
 
 if __name__ == '__main__':
-    run_adversarial_tests(TEST_CONFIG)
+    # run_adversarial_tests(TEST_CONFIG)
+    cfg = {'render': False, 'num_objects': 1, 'object_index': 0}
+    env1 = env_factory.createEnvs(0, "object_grasping", cfg)
+    _metadata = env1.setObjectInitMetaData()
+    env1.reset()
+    act1 = env1.getNextAction()
+    _, re1, done1 = env1.step(act1)
+    env1.close()
+    
+    env2 = env_factory.createEnvs(0, "custom_object_grasping", cfg)
+    _ = env2.setObjectInitMetaData(_metadata)
+    env2.reset()
+    act2 = env2.getNextAction()
+    _, re2, done2 = env2.step(act2)
+    env2.close()
+    
+    print(re1, re2)
+    # import pdb; pdb.set_trace()
+    
+    
+    
+    

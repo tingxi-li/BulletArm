@@ -1,0 +1,1 @@
+export PYTHONPATH=/home/weilab/tingxi/BulletArm/:$PYTHONPATH

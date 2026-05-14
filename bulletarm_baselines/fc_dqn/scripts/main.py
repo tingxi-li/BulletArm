@@ -60,7 +60,7 @@ def saveModelAndInfo(logger, agent):
 def evaluate(envs, agent, logger):
   states, in_hands, obs = envs.reset()
   evaled = 0
-  temp_reward = [[] for _ in range(num_eval_processes)]
+  temp_reward = [[] for _ in range(max(1, num_eval_processes))]
   if not no_bar:
     eval_bar = tqdm(total=num_eval_episodes)
   while evaled < num_eval_episodes:
@@ -90,6 +90,9 @@ def evaluate(envs, agent, logger):
   logger.writeLog()
   if not no_bar:
     eval_bar.close()
+    
+# def SINGLE_PROC_evaluate(envs, agent, logger):
+    
 
 def train():
     eval_thread = None
@@ -111,6 +114,7 @@ def train():
 
     # logging
     base_dir = os.path.join(log_pre, '{}_{}_{}'.format(alg, model, env))
+    base_dir = os.path.abspath(base_dir)
     if note:
         base_dir += '_'
         base_dir += note
@@ -120,6 +124,7 @@ def train():
         log_dir = os.path.join(base_dir, timestamp)
     else:
         log_dir = os.path.join(base_dir, log_sub)
+    log_dir = os.path.abspath(log_dir)
 
     # logger = Logger(log_dir, env, 'train', num_processes, max_episode, log_sub)
 
@@ -127,7 +132,7 @@ def train():
     # logger = Logger(log_dir, checkpoint_interval=save_freq, hyperparameters=hyper_parameters)
     logger = BaselineLogger(log_dir, checkpoint_interval=save_freq, num_eval_eps=num_eval_episodes, hyperparameters=hyper_parameters, eval_freq=eval_freq)
     logger.saveParameters(hyper_parameters)
-
+    # print(logger.info_dir)
     if buffer_type == 'expert':
         replay_buffer = QLearningBufferExpert(buffer_size)
     else:
@@ -135,18 +140,18 @@ def train():
     exploration = LinearSchedule(schedule_timesteps=explore, initial_p=init_eps, final_p=final_eps)
 
     envs.envs.setObjectInitMetaData()
-    
-    states, in_hands, obs = envs.reset()
+    eval_envs.envs.setObjectInitMetaData()
 
     if load_sub:
         logger.loadCheckPoint(os.path.join(base_dir, load_sub, 'checkpoint'), agent.loadFromState, replay_buffer.loadFromState)
 
     if num_processes == 0 and num_eval_processes == 0:
         SINGLE_PROC = True
+        states, in_hands, obs = envs.reset()
         # num_processes = 1
     else:
         SINGLE_PROC = False
-    
+        states, in_hands, obs = envs.reset_envs(num_processes)
     
     if planner_episode > 0 and not load_sub:
         if fill_buffer_deconstruct:
@@ -236,6 +241,7 @@ def train():
         pbar.set_description('Episodes:0; Reward:0.0; Explore:0.0; Loss:0.0; Time:0.0')
     timer_start = time.time()
 
+    # the training iteration starts here
     while logger.num_training_steps < max_train_step:
         if fixed_eps:
             eps = final_eps
@@ -262,18 +268,24 @@ def train():
         if SINGLE_PROC:
             states_, in_hands_, obs_, rewards, dones = envs.step(actions_star, auto_reset=False)
             done_idxes = torch.nonzero(dones).squeeze(1)
-            reset_states_, reset_in_hands_, reset_obs_ = envs.reset()
         else:
             states_, in_hands_, obs_, rewards, dones = envs.stepWait()
             done_idxes = torch.nonzero(dones).squeeze(1)
-            reset_states_, reset_in_hands_, reset_obs_ = envs.reset_envs(done_idxes)
+            
             
         done_idxes = torch.nonzero(dones).squeeze(1)
-        if done_idxes.shape[0] != 0:            
-            for j, idx in enumerate(done_idxes):
-                states_[idx] = reset_states_[j]
-                in_hands_[idx] = reset_in_hands_[j]
-                obs_[idx] = reset_obs_[j]
+        if done_idxes.shape[0] != 0:    
+            if SINGLE_PROC:
+                reset_states_, reset_in_hands_, reset_obs_ = envs.reset()
+                states_[0] = reset_states_[0]
+                in_hands_[0] = reset_in_hands_[0]
+                obs_[0] = reset_obs_[0]
+            else:        
+                reset_states_, reset_in_hands_, reset_obs_ = envs.reset_envs(done_idxes)
+                for j, idx in enumerate(done_idxes):
+                    states_[idx] = reset_states_[j]
+                    in_hands_[idx] = reset_in_hands_[j]
+                    obs_[idx] = reset_obs_[j]
 
         
         buffer_obs_ = getCurrentObs(in_hands_, obs_)
@@ -301,6 +313,7 @@ def train():
             pbar.update(logger.num_training_steps - pbar.n)
 
         if logger.num_training_steps > 0 and eval_freq > 0 and logger.num_training_steps % eval_freq == 0:
+            # import pdb; pdb.set_trace()
             if eval_thread is not None:
                 eval_thread.join()
             eval_agent.copyNetworksFrom(agent)

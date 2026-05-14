@@ -143,6 +143,42 @@ class ObjectGrasping(BaseEnv):
 
         return obs, reward, True
 
+    def takeAction(self, action):
+        # import pdb;pdb.set_trace()
+        """make compatible for single process mode"""
+        if len(action) == 1:
+            action = action[0]
+            
+        motion_primative, x, y, z, rot = self._decodeAction(action)
+        self.last_action = action
+        self.last_obj = self.robot.holding_obj
+
+        # Get transform for action
+        pos = [x, y, z]
+        rot_q = pb.getQuaternionFromEuler(rot)
+
+        # Take action specfied by motion primative
+        if motion_primative == constants.PICK_PRIMATIVE:
+            if self.robot.holding_obj is None:
+                if self.perfect_grasp and not self._checkPerfectGrasp(x, y, z, rot, self.objects):
+                    return
+            self.robot.pick(pos, rot_q, self.pick_pre_offset, dynamic=self.dynamic,
+                            objects=self.objects, simulate_grasp=self.simulate_grasp, top_down_approach=self.pick_top_down_approach)
+        elif motion_primative == constants.PLACE_PRIMATIVE:
+            obj = self.robot.holding_obj
+            if self.robot.holding_obj is not None:
+                if self.perfect_place and not self._checkPerfectPlace(x, y, z, rot, self.objects):
+                    return
+                self.robot.place(pos, rot_q, self.place_pre_offset,
+                            dynamic=self.dynamic, simulate_place=self.simulate_grasp, top_down_approach=self.place_top_down_approach)
+        elif motion_primative == constants.PUSH_PRIMATIVE:
+            pass
+        elif motion_primative == constants.PULL_PRIMATIVE:
+            self.robot.pull(pos, rot_q, self.pull_offset, dynamic=self.dynamic)
+        else:
+            raise ValueError('Bad motion primative supplied for action.')
+
+
     def isSimValid(self):
         for obj in self.objects:
             p = obj.getPosition()
@@ -171,9 +207,9 @@ class ObjectGrasping(BaseEnv):
                     if not self.exhibit_env_obj:
                         for i in range(self.num_obj):
                             try:
-                                obj_info = self.object_init_info[i]
+                                obj_info = self.object_init_metadata[i]
                             except IndexError:
-                                raise ValueError("use setObjectInitInfo() to set object_init_info before reset")
+                                raise ValueError("use setObjectInitMetaData() to set object_init_info before reset")
                             shift = [self.workspace[0].mean(), self.workspace[1].mean(), 0.0]
                             position = obj_info["position"]
                             # position = [[position[0][0] + shift[0], position[0][1] + shift[1],  position[0][2]]]
@@ -286,11 +322,11 @@ class ObjectGrasping(BaseEnv):
         state, in_hand, obs = super(ObjectGrasping, self)._getObservation()
         return 0, np.zeros_like(in_hand), obs
 
-    def setObjectInitMetaData(self, object_init_info=None):
+    def setObjectInitMetaData(self, object_init_metadata=None):
         """ IMPORTANT: This function should be called no more than once per environment reset."""
         
-        if object_init_info is None:
-            object_init_info = []
+        if object_init_metadata is None:
+            object_init_metadata = []
             for obj in range(self.num_obj):
                 _x = (np.random.rand() - 0.5) * 0.1
                 _y = (np.random.rand() - 0.5) * 0.1
@@ -303,11 +339,12 @@ class ObjectGrasping(BaseEnv):
                     "rotation": None, # it has to be in [[]], like position
                     "index": -1,
                 }
-                object_init_info.append(_info)
+                object_init_metadata.append(_info)
         else:
             pass
         
-        self.object_init_info = object_init_info
+        self.object_init_metadata = object_init_metadata
+        return object_init_metadata
         
 def createObjectGrasping(config):
     return ObjectGrasping(config)

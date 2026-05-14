@@ -468,6 +468,15 @@ class SingleRunner(object):
       obs, rewards, dones = results
     else:
       obs, rewards, dones, metadata = results
+
+    if auto_reset:
+      if isinstance(dones, (np.ndarray, list, tuple)):
+        done_flag = np.any(dones)
+      else:
+        done_flag = bool(dones)
+      if done_flag:
+        obs = self.env.reset()
+
     states, hand_obs, obs = obs
 
     if metadata:
